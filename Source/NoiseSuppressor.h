@@ -34,7 +34,8 @@ public:
         fallKeep   = (float) std::pow (0.8, scale);
         smoothKeep = (float) std::pow (0.85, scale);
         attack     = (float) (1.0 - std::pow (0.3, scale));
-        release    = (float) (1.0 - std::pow (0.7, scale));
+        release    = (float) (1.0 - std::pow (0.5, scale));
+        dropKeep   = (float) std::pow (0.35, scale);
         reset();
     }
 
@@ -44,6 +45,7 @@ public:
         std::memset (outRing, 0, sizeof outRing);
         std::memset (noise, 0, sizeof noise);
         std::memset (ps, 0, sizeof ps);
+        std::memset (pd, 0, sizeof pd);
         for (auto& g : gp) g = 1.0f;
         wr = rd = count = 0;
         init = false;
@@ -93,7 +95,11 @@ private:
             else if (ps[k] < noise[k]) noise[k] = noise[k] * fallKeep + ps[k] * (1.0f - fallKeep);
             else                    noise[k] = std::min (ps[k], noise[k] * riseFactor);
 
-            const float q = std::max (ps[k], 0.35f * p); // stable decision power, still opens fast on onsets
+            // decision power: smooth on the way up, but collapses quickly when a word ends so the
+            // gate closes with the speech instead of lingering on a slowly decaying average
+            pd[k] = init ? (p >= pd[k] ? pd[k] * smoothKeep + p * (1.0f - smoothKeep)
+                                       : pd[k] * dropKeep + p * (1.0f - dropKeep)) : p;
+            const float q = std::max (pd[k], 0.35f * p);
             float t = std::max (gmin, 1.0f - alpha * noise[k] / q);
             t = gp[k] + (t - gp[k]) * (t > gp[k] ? attack : release);
             gp[k] = t;
@@ -142,10 +148,10 @@ private:
     }
 
     float win[N], cosT[K], sinT[K];
-    float inRing[N] {}, outRing[N] {}, re[N] {}, im[N] {}, noise[K + 1] {}, ps[K + 1] {}, gp[K + 1] {};
+    float inRing[N] {}, outRing[N] {}, re[N] {}, im[N] {}, noise[K + 1] {}, ps[K + 1] {}, pd[K + 1] {}, gp[K + 1] {};
     int wr = 0, rd = 0, count = 0;
     bool init = false;
-    float riseFactor = 1.002f, fallKeep = 0.8f, smoothKeep = 0.85f, attack = 0.7f, release = 0.3f;
+    float riseFactor = 1.002f, fallKeep = 0.8f, smoothKeep = 0.85f, dropKeep = 0.35f, attack = 0.7f, release = 0.3f;
     float amountTarget = 0.6f, amt = 0.6f, mixTarget = 1.0f, mix = 1.0f, redDb = 0.0f;
 };
 } // namespace nsone
